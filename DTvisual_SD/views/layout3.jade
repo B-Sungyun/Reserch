@@ -1,0 +1,740 @@
+//
+   Created by BaeSung-yun on 2016. 12. 5..
+    update 2019.11.09
+    */
+
+doctype html
+head
+    script(src='/javascripts/jquery-1.10.2.min.js')
+    script(src="/javascripts/d3.v3.min.js")
+    script(charset="utf-8")
+    // material icon
+    script(src="/javascripts/material.min.js")
+    script(src="/javascripts/info.js")
+    link(rel='stylesheet', href='/stylesheets/material.css')
+    link(rel='stylesheet', href='/stylesheets/materialicons.css')
+    link(rel='stylesheet', href='/stylesheets/info.css')
+    link(rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons")
+    title="Sankey Decision Tree"
+    block head
+
+body
+    p(class="title") Decision Tree
+    div#flowinfo
+    div#chart
+        block content
+    div#index
+        .info.index.i.material-icons help
+            .infoMsg.mdl-textfield__input This list is a list of the predicated variables used in the decision tree. If you mouse over a predicated variable, you can see where it is distributed within the decision tree.
+        p Predicate Value
+
+    .footer Decision Tree |
+    script.
+
+        var root_element = document.getElementById('chart');
+
+        var height = root_element.offsetHeight;
+        var width = root_element.offsetWidth;
+
+        var root = d3.select('#chart').append('svg').style("height", "100%").style("width", "100%");
+
+        makeViewBox(0, 0, width, height);
+
+        function makeViewBox(v1, v2, v3, v4) {
+            root.attr("viewBox", v1 + " " + v2 + " " + v3 + " " + v4)
+                    .attr("preserveAspectRatio", "xMidYMid meet");//메인 시각화가 나오는 view
+        }
+
+        console.log(width, height);
+
+        var flowview = d3.select('#flowinfo').append('svg').style("height", "100%").style("width", "100%");
+        var flow_element = document.getElementById('flowinfo');
+        var flowinfo_width = flow_element.offsetWidth;
+
+
+        var indexview = d3.select('#index').append('svg').style("height", "100%").style("width", "100%");
+        var infoview = d3.select('#sort').append('svg').attr("height", "100%").style("width", "100%");
+
+
+        var curvature = .5;
+
+        function link(d) {
+            var x0 = d.x0,
+                    x1 = d.x1,
+                    xi = d3.interpolateNumber(x0, x1),
+                    x2 = xi(curvature),
+                    x3 = xi(1 - curvature),
+                    y0 = d.y0,
+                    y1 = d.y1,
+                    y2 = d.y1 + d.width,
+                    y3 = d.y0 + d.width;
+
+            return "M" + x0 + "," + y0
+                    + "C" + x2 + "," + y0
+                    + " " + x3 + "," + y1
+                    + " " + x1 + "," + y1
+                    + "V" + y2
+                    + "C" + x3 + "," + y2
+                    + " " + x2 + "," + y3
+                    + " " + x0 + "," + y3
+                    + "V" + y0;
+
+        }
+
+        //----------------------------------------------------------------------------------
+        var mini = height * 0.2 * (1 / 20836);
+        var node_start = 10;
+        var node_spaceX = width / (8);
+        var node_width = width / 100;
+        var node_min = height / 350;
+        var node_max = height / 3;
+
+        var svg_y_position = 0;
+
+        var center_h = height / 2;
+
+        var text_space = height * 0.02;
+        var textYpos = 0;
+
+        var font_size = {
+            "nodename": '1.5vh',
+            "max": '1vh',
+            "min": '0.8vh',
+            "split": '1vh',
+            "path_cu": '1vw',
+            "path": '11px',
+            "perName": '15px',
+            "per": '0.7vw',
+            "nodeHL": '2vh',
+            "variable":'12px'
+        };
+
+
+
+        var edges = root.append('g');
+        var nodes = root.append('g');
+
+        var mouseInfo = root.append('g');
+        var indexInfo = indexview.append('g');
+        var flowInfo = flowview.append('g');
+        var infoText = infoview.append('g');
+
+        var color = d3.scale.linear().domain([0,50,100]).range(["BLUE","White","RED"]);
+        var circleSize = d3.scale.linear().domain([10, 300]).range([3, 15]);
+
+        var divisionStandard = [];
+        var sortSegInfo = [];
+
+        var nodeinfo;
+
+        var nodegroup = {};
+
+        var splitValInfo = {};
+        var splitValOrder = [];
+
+        var node_data;
+        var edge_data;
+
+        var pathX = node_start + width * 0.01;
+
+        d3.json("/data/data_eng.json", function (error, data) {
+
+            node_data = data.nodes;
+            edge_data = data.edges;
+            MakeSplitInfo(data.value);
+            NodeDraw(node_data);
+            NodeWidth(edge_data);
+            splitValInfo = GetSplitInfo("color");
+            splitValOrder = GetSplitInfo("order");
+            nodeinfo = GetNode(data.nodes);
+
+            splitValOrder.forEach(function (split) {
+                DivisonStandardInFo(split);
+            })
+
+            svg_y_position = svgPositionY("NODE31");
+
+            draw();
+            SortSeg(0);
+
+
+        })
+
+        function draw() {
+            draw_edge();
+
+        }
+
+        function draw_edge() {
+            var edgeinfo = GetEdge(node_data, svg_y_position);
+            for (var i = 0; i < edgeinfo.length; i++) {
+                var edge = edgeinfo[i][0];
+                edges.append("path")
+                        .attr('id', edge.id)
+                        .attr('d', link(edge))
+                        .attr('fill', function () {
+                            var probability = edge.color;
+                            return color(probability);
+                        })
+                        .attr('stroke', 'black')
+                        .attr('stroke-width', .2)
+                        .attr('opacity', 1)
+                        .on("click", function () {//노드 클릭시 id를 리턴해주는 함수
+                            //console.log(this.id);
+                        });
+
+                if(i==(edgeinfo.length)-1){
+                    console.log(edge.id)
+                    draw_node();
+                }
+
+            }
+
+        }
+
+        function draw_node() {
+            for (var i = 0; i < node_data.length; i++) {
+                var key = node_data[i].id;
+                var name = node_data[i].group;
+                if (name == "NODE") {
+                    var id = node_data[i].id.split("NODE");
+                    name = " " + id[1];
+                }
+                nodegroup[key] = name;
+                var xpos = nodeinfo[key][0].x;
+                var ypos = nodeinfo[key][0].y + svg_y_position;
+                var node_height = nodeinfo[key][0].width;
+                if (node_height < node_min)
+                    node_height = node_min;
+
+                nodes.append("rect")
+                        .attr('id', key)
+                        .attr('class', name)
+                        .attr("x", xpos)
+                        .attr("y", ypos)
+                        .attr("height", node_height)
+                        .attr("width", node_width)
+                        .attr("stroke", "black")
+                        .attr("stroke-width", 0.5)
+                        .attr("fill", splitValInfo[node_data[i].group])
+                        .on("mouseover", function () {
+                            var numinfo = RetrunEdgeInfo(this.id);
+                            dementiaPer = numinfo.per;
+                            Num = numinfo.num;
+                            infoNew(this.id);
+                        })
+                        .on("click", function () {
+                            //console.log(this.id);
+                        })
+                        .on("mouseout", function () {
+                            removeinfoNew()
+                        });
+                draw_node_text(xpos, ypos, node_data[i], nodeinfo[key][0], key, name, node_height)
+            }
+        }
+
+        function draw_node_text(xpos, ypos, node_data, nodeinfo, key, name, node_height) {
+            var pointY = 0;
+            if (node_data.group == "NODE") {
+                var radios = circleSize(nodeinfo.width);
+                var circleX = xpos + radios * 2 + width * 0.01;
+
+                nodes.append("text")
+                        .attr("x", circleX + radios + 0.005 * height)
+                        .attr("y", ypos + nodeinfo.width / 2)
+                        .attr('z-index', 1)
+                        .attr('id', key + "T")
+                        .attr('class', name + "t")
+                        .attr("dy", ".35em")
+                        .attr('font-size', font_size.nodename)
+                        .attr("stroke", "white")
+                        .attr("stroke-width", 0.2)
+                        .attr("text-anchor", "end")
+                        .attr("transform", null)
+                        .text(name)
+                        .attr("text-anchor", "start")
+                        .on("mouseover", function () {
+                            var id = this.id.split('T')[0];
+                            var numinfo = RetrunEdgeInfo(id);
+                            dementiaPer = numinfo.per;
+                            Num = numinfo.num;
+                            infoNew(id);
+                        })
+                        .on("click", function () {
+                            //console.log(this.id);
+                        })
+                        .on("mouseout", function () {
+                            removeinfoNew()
+                        });
+
+                nodes.append("circle")
+                        .attr("cx", circleX)
+                        .attr("cy", ypos + nodeinfo.width / 2)
+                        .attr("r", radios)
+                        .attr("fill", splitValInfo[node_data.group])
+                        .attr('class', name)
+                        .attr("dy", ".35em");
+            } else {
+                nodes.append("text")
+                        .attr("x", xpos)
+                        .attr("y", ypos - height * 0.018)
+                        .attr('class', name + "t")
+                        .attr("dy", ".35em")
+                        .attr('id', key + "T")
+                        .attr('font-size', font_size.nodename)
+                        .attr("text-anchor", "end")
+                        .attr("stroke", "white")
+                        .attr("stroke-width", 0.2)
+                        .attr("transform", null)
+                        .text(textClen(name))
+                        .attr("text-anchor", "start")
+                        .on("mouseover", function () {
+                            var id = this.id.split('T')[0];
+                            var numinfo = RetrunEdgeInfo(id);
+                            dementiaPer = numinfo.per;
+                            Num = numinfo.num;
+                            infoNew(id);
+                        })
+                        .on("click", function () {
+                            //console.log(this.id);
+                        })
+                        .on("mouseout", function () {
+                            removeinfoNew()
+                        });
+
+                nodes.append("rect")
+                        .attr("x", xpos)
+                        .attr("y", function () {
+                            var rate = ReturnPointY(key);
+                            var height = d3.scale.linear().domain([1, 0]).range([ypos + nodeinfo.width, ypos]);
+                            pointY = height(rate);
+                            return pointY;
+                        })
+                        .attr("id", key + "s")
+                        .attr('class', name + "g")
+                        .attr("height", 1)
+                        .attr("width", node_width)
+                        .attr("stroke", "black")
+                        .attr("stroke-width", 0.5)
+                        .attr("fill", "black");
+
+                nodes.append("text")
+                        .attr("x", xpos)
+                        .attr("y", ypos - height * 0.005)
+                        .attr("id", key + "mx")
+                        .attr('class', name + "g")
+                        .attr("dy", ".30em")
+                        .attr('font-size', font_size.max)
+                        .attr("text-anchor", "end")
+                        .attr("transform", null)
+                        .text(node_data.max)
+                        .attr("text-anchor", "start");
+
+                nodes.append("text")
+                        .attr("x", xpos)
+                        .attr("y", ypos + node_height + height * 0.005)
+                        .attr("id", key + "mn")
+                        .attr('class', name + "g")
+                        .attr("dy", ".30em")
+                        .attr('font-size', font_size.min)
+                        .attr("text-anchor", "end")
+                        .attr("transform", null)
+                        .text(node_data.min)
+                        .attr("text-anchor", "start");
+
+                nodes.append("text")
+                        .attr("x", xpos + node_width)
+                        .attr("y", pointY)
+                        .attr("id", key + "S")
+                        .attr('class', name + "g")
+                        .attr("dy", ".35em")
+                        .attr('font-size', font_size.split)
+                        .attr("text-anchor", "end")
+                        .attr("transform", null)
+                        .text(node_data.splitpoint)
+                        .attr("text-anchor", "start");
+
+            }
+        }
+
+        flowInfo.append("rect")
+                .attr("x", 0)
+                .attr("y", 0)
+                .style("height", "100%")
+                .style("width", "100%")
+                .attr("fill", "#e9e8e7")
+                .attr("opacity", 1);
+
+        flowInfo.append("text")
+                .attr("x", pathX)
+                .attr("y", "45%")
+                .attr("dy", ".35em")
+                .attr('font-size', "14px")
+                .attr("text-anchor", "end")
+                .attr("transform", null)
+                .text("CURRENT PATH")
+                .attr("fill", "#494949")
+                .attr("text-anchor", "start");
+
+        var info = flowInfo.append("text")
+                .attr("x", pathX + 120)
+                .attr("y", "45%")
+                .attr("dy", ".35em")
+                .attr("text-anchor", "end")
+                .attr("transform", null)
+                .text("The path information is shown while mouse-over on node.")
+                .attr("text-anchor", "start");
+
+
+        function removeinfoNew() {
+            mouseInfo.selectAll("text").remove();
+            mouseInfo.selectAll("rect").remove();
+            flowInfo.selectAll(".flow").remove();
+            nodes.selectAll("*").transition().style('opacity', 1);
+            edges.selectAll("*").transition().style('opacity', 1);
+            info.style('opacity', 1);
+        }
+
+        function infoNew(name) {
+            info.style('opacity', 0);
+            nodes.selectAll("*").transition().style('opacity', 0.5);
+            edges.selectAll("*").transition().style('opacity', 0.5);
+            var flowval = FindParents(name);
+
+            var xpos = nodeinfo[name][0].x + width * 0.05;
+            var ypos = nodeinfo[name][0].y + svg_y_position;
+
+            var posx = pathX + 110;
+
+            var flow_width = 200;
+            var edgeid
+
+            for (var i = 0; i < flowval.length; i++) {
+
+                var selectid = flowval[i].id;
+                nodes.select("#" + selectid).transition().style('opacity', 1);
+                nodes.select("#" + selectid + "T").transition().style('opacity', 1);
+                nodes.select("#" + selectid + "s").transition().style('opacity', 1);
+                nodes.select("#" + selectid + "S").transition().style('opacity', 1);
+                nodes.select("#" + selectid + "mn").transition().style('opacity', 1);
+                nodes.select("#" + selectid + "mx").transition().style('opacity', 1);
+                if (i > 0)
+                    edgeid = flowval[i - 1].id + "x" + selectid
+                edges.selectAll("#" + edgeid).transition().style('opacity', 1);
+
+                var flow = flowval[i].group;
+                var triangle = 0;
+                var str = flowval[i].text;
+
+                var fill = splitValInfo[flow];
+
+                if (flow == "leaf node") {
+                    fill = splitValInfo["NODE"];
+                }
+
+                var text_start = flow_width * 0.01
+
+                var x1 = posx;
+                var x2 = posx + triangle;
+                var x3 = posx + flow_width - triangle;
+                var x4 = posx + flow_width;
+                var y1 = 10;
+                var y3 = 40;
+                var y2 = (y1 + y3) / 2;
+
+                var points = x1 + "," + y1 +
+                        " " + x2 + "," + y2 +
+                        " " + x1 + "," + y3 +
+                        " " + x3 + "," + y3 +
+                        " " + x4 + "," + y2 +
+                        " " + x3 + "," + y1;
+
+                if (i == flowval.length - 1) {
+
+                    flowInfo.append("polygon")
+                            .attr("class", "flow")
+                            .attr("points", points)
+                            .attr("fill", fill)
+                            .attr("opacity", 1);
+                } else {
+                    flowInfo.append("polygon")
+                            .attr("class", "flow")
+                            .attr("points", points)
+                            .attr("fill", fill)
+                            .attr("opacity", 1);
+                }
+
+                flowInfo.append("text")
+                        .attr("class", "flow")
+                        .attr("x", x2 + text_start + 10)
+                        .attr("y", 25)
+                        .attr("dy", ".35em")
+                        .attr('font-size', font_size.path)
+                        .attr("text-anchor", "end")
+                        .attr("transform", null)
+                        .text(textClen(str))
+                        .attr("text-anchor", "start");
+
+                if(triangle>0)
+                    posx += flow_width-3;
+                else
+                    posx += flow_width+3;
+            }
+
+            var thisgroup = nodeinfo[name][0].group;
+            var rect_width = width * 0.15;
+
+            if (xpos > width * 0.9) {
+                xpos -= flow_width;
+            }
+
+            mouseInfo.append("rect")
+                    .attr("x", xpos - width * 0.005)
+                    .attr("y", ypos - height * 0.01)
+                    .attr("height", height * 0.1)
+                    .attr("width", rect_width)
+                    .attr("fill", "white")
+                    .attr("opacity", 0.9);
+
+            mouseInfo.append("rect")
+                    .attr("x", xpos - width * 0.005)
+                    .attr("y", ypos - height * 0.01)
+                    .attr("height", "2.5vh")
+                    .attr("width", rect_width)
+                    .attr("fill", splitValInfo[nodeinfo[name][0].group])
+                    .attr("opacity", 0.9);
+
+            mouseInfo.append("text")
+                    .attr("class", "per")
+                    .attr("x", xpos)
+                    .attr("y", ypos)
+                    .attr("dy", ".35em")
+                    .attr('font-size', font_size.perName)
+                    .attr("text-anchor", "end")
+                    .attr("transform", null)
+                    .text(nodegroup[name])
+                    .attr("text-anchor", "start");
+
+            ypos += text_space * 1.5;
+
+            mouseInfo.append("text")
+                    .attr("class", "per")
+                    .attr("x", xpos)
+                    .attr("y", ypos)
+                    .attr("dy", ".35em")
+                    .attr('font-size', font_size.per)
+                    .attr("text-anchor", "end")
+                    .attr("transform", null)
+                    .text("Dementia: " + dementiaPer.toFixed(2) + "  %")
+                    .attr("text-anchor", "start");
+
+            ypos += text_space;
+
+            mouseInfo.append("text")
+                    .attr("class", "per")
+                    .attr("x", xpos)
+                    .attr("y", ypos)
+                    .attr("dy", ".35em")
+                    .attr('font-size', font_size.per)
+                    .attr("text-anchor", "end")
+                    .attr("transform", null)
+                    .text("Normal: " + Number(100 - dementiaPer).toFixed(2) + " %")
+                    .attr("text-anchor", "start");
+
+            ypos += text_space;
+
+            var percent = (Num / 20836) * 100
+
+            mouseInfo.append("text")
+                    .attr("class", "per")
+                    .attr("x", xpos)
+                    .attr("y", ypos)
+                    .attr("dy", ".35em")
+                    .attr('font-size', font_size.per)
+                    .attr("text-anchor", "end")
+                    .attr("transform", null)
+                    .text("Size: " + Num + "(" + percent.toFixed(2) + "%)")
+                    .attr("text-anchor", "start");
+
+        }
+
+        var infoElement = document.getElementById('index');
+        var infoWidth = infoElement.offsetWidth;
+        var infoHeight = infoElement.offsetHeight;
+
+        var dementiaPer = 0;
+        var Num = 0;
+
+        var xpos = infoWidth * 0.03;
+
+        var colorIndexBoxSize = 13
+
+        function DivisonStandardInFo(name) {
+
+            if (name == "NODE")
+            /*nothing*/return;
+
+            indexInfo.append("rect")
+                    .attr("id", name)
+                    .attr("x", xpos)
+                    .attr("y", textYpos + infoHeight * 0.03)
+                    .attr("height", colorIndexBoxSize)
+                    .attr("width", colorIndexBoxSize)
+                    .attr("fill", splitValInfo[name])
+                    .on('mouseover', function () {
+                        var all = nodes.selectAll("rect,circle,text");
+                        all.transition().style('opacity', 0.3);
+                        all.style('pointerEvents', 'none');
+                        edges.transition().style('opacity', 0.3);
+                        var selected = nodes.selectAll("." + this.id);
+                        selected.transition().style('opacity', 1);
+                        selected.style('pointerEvents', 'inherits');
+                        indexInfo.select(this.id).transition().style('stroke', "red");
+                        nodes.selectAll("." + this.id + "t").transition().style('opacity', 1)
+                        nodes.selectAll("." + this.id + "t").style('font-size', font_size.nodeHL)
+                        nodes.selectAll("." + this.id + "g").transition().style('opacity', 1);
+                    })
+                    .on('mouseout', function () {
+                        d3.select(this).style('fill', splitValInfo[name]);
+                        var all = nodes.selectAll("rect,circle,text");
+                        all.transition().style('opacity', '1');
+                        all.style('pointerEvents', 'inherits');
+                        edges.transition().style('opacity', 0.8);
+                        nodes.selectAll("." + this.id + "t").style('font-size', font_size.nodename);
+                    })
+                    .on("click", function () {
+                        //console.log(this.id);
+                    })
+                    .attr("stroke", "black")
+                    .attr("stroke-width", 0.5);
+
+
+            indexInfo.append("text")
+                    .attr("x", xpos + infoWidth * 0.07)
+                    .attr("y", textYpos + infoHeight * 0.04)
+                    .attr("id", name)
+                    .attr("dy", ".35em")
+                    .attr("fill", "black")
+                    .attr('font-size', font_size.variable)
+                    .attr("text-anchor", "end")
+                    .attr("transform", null)
+                    .text(textClen(name))
+                    .attr("text-anchor", "start")
+                    .on('mouseover', function () {
+                        var all = nodes.selectAll("rect,circle");
+                        all.transition().style('opacity', 0.3);
+                        all.style('pointerEvents', 'none');
+                        edges.transition().style('opacity', 0.3);
+                        var selected = nodes.selectAll("." + this.id);
+                        selected.transition().style('opacity', 1);
+                        selected.style('pointerEvents', 'inherits');
+                        nodes.selectAll("." + this.id + "t").style('font-size', font_size.nodeHL);
+                    })
+                    .on('mouseout', function () {
+                        d3.select(this).style('fill', "black");
+                        var all = nodes.selectAll("rect,circle");
+                        all.transition().style('opacity', '1');
+                        all.style('pointerEvents', 'inherits');
+                        edges.transition().style('opacity', 0.8);
+                        nodes.selectAll("." + this.id + "t").style('font-size', font_size.nodename);
+                    })
+                    .on("click", function () {
+                        //console.log(this.id);
+                    });
+
+            textYpos += 25;
+
+        }
+
+        //-----------화면 줌을 위한 부분--------------------------------------------------------------
+
+        var bbox = {
+            x: 0,
+            y: 0,
+            width: width,
+            height: height
+        };
+
+
+        var viewbox = [0, 0, width, height];
+        var zoom = 1;
+
+        function transformEventCoords(event) {
+            if (event.clientX > root_element.offsetWidth) {
+                return -1;
+            }
+            return {
+                x: event.clientX - root_element.offsetLeft,
+                y: event.clientY - root_element.offsetTop
+            };
+        }
+
+        var preViewBox = [0, 0, 0, 0];
+
+        function doZoom(coords, factor) {
+            x = Number(viewbox[0]) + Number(coords.x / zoom);
+            y = Number(viewbox[1]) + Number(coords.y / zoom);
+
+            if (factor < 0) {
+                factor = 0.95;
+            } else {
+                factor = 1.05;
+            }
+
+
+            var z = ((zoom || 1) * factor) || 1;
+            zoom = z;
+
+            //zoom viewbox dimensions
+            viewbox[2] = bbox.width / zoom;
+            viewbox[3] = bbox.height / zoom;
+
+            //transform coordinates to new viewbox coordinates
+            viewbox[0] = x - coords.x / zoom;
+            if (viewbox[0] < node_start)
+                viewbox[0] = node_start
+            viewbox[1] = y - coords.y / zoom;
+
+            if (viewbox[1] < 0)
+                viewbox[1]=0
+
+
+            preViewBox = viewbox;
+
+            var viewbox_width = viewbox[2]-viewbox[0];
+
+            if(viewbox_width>(width*0.95)){
+                viewbox[0]=node_start;
+                viewbox[1]=0
+                viewbox[2]=width;
+                viewbox[3]=height*1.05;
+            }
+
+            makeViewBox(viewbox[0], viewbox[1], viewbox[2], viewbox[3]);
+        }
+
+        /* Event handler for mouse wheel event.   */
+        function wheel(event) {
+            var delta = 0;
+
+            if (!event) /* For IE. */
+                event = window.event;
+            if (event.wheelDelta) { /* IE/Opera. */
+                delta = event.wheelDelta / 120;
+            } else if (event.detail) {
+                /** Mozilla case. */
+                delta = -event.detail / 3;
+            }
+            if (delta) {
+                if (transformEventCoords(event) == -1)
+                    return false;
+                doZoom(transformEventCoords(event), delta);
+            }
+            if (event.preventDefault) event.preventDefault();
+            event.returnValue = false;
+        }
+
+        if (window.addEventListener) window.addEventListener('DOMMouseScroll', wheel, false);
+        /** IE/Opera. */
+        window.onmousewheel = document.onmousewheel = wheel;
+
